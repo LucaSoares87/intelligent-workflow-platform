@@ -1,0 +1,21 @@
+# ===== connectors/application.yml =====
+server:
+  port: 8084
+
+spring:
+  application:
+    name: connectors
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+
+app:
+  description: "Serviço de conectores externos (mocks HTTP)"

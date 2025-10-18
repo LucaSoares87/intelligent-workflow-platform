@@ -1,0 +1,151 @@
+ ===== orchestrator/application.yml =====
+server:
+  port: 8082
+  shutdown: graceful
+
+spring:
+  application:
+    name: orchestrator
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            workflow-engine:
+              - uri: http://workflow-engine:8081
+            ai-decision:
+              - uri: http://ai-decision:8083
+            connectors:
+              - uri: http://connectors:8084
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 2000
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 5000
+    instances:
+      orchestration:
+        baseConfig: default
+      aiService:
+        baseConfig: default
+        failureRateThreshold: 30
+      connectors:
+        baseConfig: default
+  
+  retry:
+    configs:
+      default:
+        registerHealthIndicator: false
+        retryExceptions:
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+        ignoreExceptions:
+          - jakarta.validation.ValidationException
+        maxAttempts: 3
+        waitDuration: 1000
+        intervalFunction: exponential
+        exponentialRandomizationMultiplier: 2
+    instances:
+      orchestration:
+        baseConfig: default
+      aiService:
+        baseConfig: default
+      connectors:
+        baseConfig: default
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+    io.github.resilience4j: DEBUG
+
+---
+# ===== api-gateway/application.yml =====
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: api-gateway
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+
+app:
+  description: "API Gateway - Ponto de entrada único para clientes"
+
+---
+# ===== ai-decision/application.yml =====
+server:
+  port: 8083
+
+spring:
+  application:
+    name: ai-decision
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+
+app:
+  description: "Serviço de decisão IA com mock e regras"
+  ai:
+    rejection-rate: 0.1
+
+---
+# ===== connectors/application.yml =====
+server:
+  port: 8084
+
+spring:
+  application:
+    name: connectors
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+
+app:
+  description: "Serviço de conectores externos (mocks HTTP)"

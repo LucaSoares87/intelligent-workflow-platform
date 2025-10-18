@@ -1,0 +1,12 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: ai-decision
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+app:
+  description: "Serviço de decisão IA (mock/regra simples)"

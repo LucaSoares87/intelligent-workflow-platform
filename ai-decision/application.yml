@@ -1,0 +1,23 @@
+# ===== ai-decision/application.yml =====
+server:
+  port: 8083
+
+spring:
+  application:
+    name: ai-decision
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    root: INFO
+    com.foursys.demo: DEBUG
+
+app:
+  description: "Serviço de decisão IA com mock e regras"
+  ai:
+    rejection-rate: 0.1

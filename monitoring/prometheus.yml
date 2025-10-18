@@ -1,0 +1,273 @@
+# ===== ARQUIVO 14: monitoring/prometheus.yml =====
+global:
+  scrape_interval: 15s      # Coletar métricas a cada 15 segundos
+  evaluation_interval: 15s  # Avaliar rules a cada 15 segundos
+  external_labels:
+    monitor: 'workflow-platform'
+    environment: 'local'
+
+# AlertManager config (opcional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Carregar alertas
+rule_files:
+  - 'alerts.yml'
+
+# Scrape configs - onde puxar métricas
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'api-gateway'
+
+  # Workflow Engine
+  - job_name: 'workflow-engine'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8081']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'workflow-engine'
+
+  # Orchestrator
+  - job_name: 'orchestrator'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8082']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'orchestrator'
+
+  # AI Decision
+  - job_name: 'ai-decision'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8083']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'ai-decision'
+
+  # Connectors
+  - job_name: 'connectors'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8084']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'connectors'
+
+# ===== ARQUIVO 15: monitoring/alerts.yml =====
+groups:
+  - name: workflow-platform-alerts
+    interval: 1m
+    rules:
+      # ===== HTTP Alerts =====
+      - alert: HighErrorRate
+        expr: |
+          (rate(http_requests_total{status=~"5.."}[5m]) / 
+           rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Alta taxa de erro (> 5%) detectada"
+          description: "Serviço {{ $labels.instance }} com taxa de erro {{ $value | humanizePercentage }} nos últimos 5 minutos"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, http_request_duration_seconds) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Latência P95 elevada (> 2s)"
+          description: "Serviço {{ $labels.instance }} com P95 = {{ $value }}s"
+
+      # ===== Circuit Breaker Alerts =====
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{name="orchestration"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: reliability
+        annotations:
+          summary: "Circuit Breaker Aberto"
+          description: "Circuit breaker '{{ $labels.name }}' em estado OPEN. Sistema em degradação."
+
+      - alert: CircuitBreakerHalfOpen
+        expr: resilience4j_circuitbreaker_state{name="orchestration"} == 0.5
+        for: 30s
+        labels:
+          severity: warning
+          team: reliability
+        annotations:
+          summary: "Circuit Breaker em HALF_OPEN"
+          description: "Circuit breaker '{{ $labels.name }}' testando recuperação"
+
+      # ===== Workflow Alerts =====
+      - alert: HighWorkflowFailureRate
+        expr: |
+          (rate(workflow_executions_failed[5m]) / 
+           rate(workflow_executions_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: workflow
+        annotations:
+          summary: "Taxa alta de workflows falhados (> 10%)"
+          description: "Workflow {{ $labels.workflow_id }} com {{ $value | humanizePercentage }} de falhas"
+
+      - alert: WorkflowExecutionTimeout
+        expr: workflow_execution_duration_seconds > 1800
+        for: 1m
+        labels:
+          severity: warning
+          team: workflow
+        annotations:
+          summary: "Execução de workflow ultrapassando 30 minutos"
+          description: "Workflow {{ $labels.workflow_id }} executando por {{ $value }}s"
+
+      # ===== Resource Alerts =====
+      - alert: HighMemoryUsage
+        expr: jvm_memory_usage_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: ops
+        annotations:
+          summary: "Uso de memória heap > 80%"
+          description: "Serviço {{ $labels.instance }} usando {{ $value | humanizePercentage }} da memória heap"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: hikari_connections_pending > 0
+        for: 2m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "Pool de conexões BD esgotado"
+          description: "{{ $value }} conexões aguardando no pool do serviço {{ $labels.instance }}"
+
+      # ===== Retry Alerts =====
+      - alert: HighRetryRate
+        expr: rate(resilience4j_retry_calls_total{kind="failed_without_retry"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: reliability
+        annotations:
+          summary: "Taxa alta de retries falhados"
+          description: "{{ $value }} retries falhados por segundo em {{ $labels.instance }}"
+
+      # ===== Availability Alerts =====
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: ops
+        annotations:
+          summary: "Serviço desligado"
+          description: "Serviço {{ $labels.job }} ({{ $labels.instance }}) está DOWN"
+
+      - alert: ServiceUnhealthy
+        expr: spring_boot_actuator_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          team: ops
+        annotations:
+          summary: "Serviço retornou status UNHEALTHY"
+          description: "{{ $labels.instance }} status = {{ $value }}"
+
+# ===== ARQUIVO 16: docker-compose.monitoring.yml =====
+version: "3.9"
+
+services:
+  # Prometheus - Coleta e armazena métricas
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    networks:
+      - workflow-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Grafana - Visualização de métricas
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    networks:
+      - workflow-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # AlertManager (opcional) - Gerencia alertas
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks:
+      - workflow-network
+
+volumes:
+  prometheus-data:
+  grafana-storage:
+  alertmanager-data:
+
+networks:
+  workflow-network:
+    driver: bridge

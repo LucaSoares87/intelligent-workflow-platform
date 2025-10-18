@@ -1,0 +1,12 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: orchestrator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+app:
+  description: "Orquestrador de steps e coordenação de serviços"

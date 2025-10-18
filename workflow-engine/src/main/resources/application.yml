@@ -1,0 +1,12 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: workflow-engine
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+app:
+  description: "Motor de workflow com persistência simples (em memória)"
